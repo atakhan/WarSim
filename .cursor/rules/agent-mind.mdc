@@ -1,0 +1,30 @@
+---
+description: WarSim — проектная память агента (Agent Mind) и канон
+alwaysApply: true
+---
+
+# Agent Mind
+
+В начале **серьёзной** задачи по WarSim (архитектура, FMP, дизайн, новый код, крупный рефакторинг):
+
+1. Прочитать [`AGENT_MIND.md`](AGENT_MIND.md).
+2. Прочитать [`agent_mind/PROJECT_MODEL.md`](agent_mind/PROJECT_MODEL.md).
+3. По теме — релевантные файлы из [`agent_mind/`](agent_mind/) (см. [`CONTEXT_MAP.md`](agent_mind/CONTEXT_MAP.md)) и канон в [`knowledge_base/`](knowledge_base/).
+
+Для мелких правок (опечатка, одна строка) полный обход не обязателен.
+
+## Иерархия
+
+`knowledge_base/` (канон) > код > `agent_mind/` (оперативная память). При конфликте — канон.
+
+## После задачи
+
+Если появилось устойчивое знание — обновить память по [`AGENT_MIND.md`](AGENT_MIND.md) и форматам в [`agent_mind/WORKFLOWS.md`](agent_mind/WORKFLOWS.md):
+
+- решение → `DECISIONS.md`
+- идея на проверку → `HYPOTHESES.md` (не в канон сразу)
+- отложенный вопрос → `OPEN_QUESTIONS.md`
+- урок эксперимента → `LESSONS_LEARNED.md`
+- сдвиг картины → `PROJECT_MODEL.md`
+
+Не дублировать канон; устаревшее — `superseded` или `agent_mind/archive/`.
