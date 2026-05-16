@@ -1,6 +1,8 @@
-use super::contact::{ContactDetection, ContactFront, detect_contact_request};
+use super::contact::{
+    BoundaryContactInput, ContactDetection, ContactFront, apply_boundary_contacts,
+};
 use super::field::{
-    FieldMaterial, FieldSnapshot, FormationField, inject_flank_pressure, propagate_pressure_wave,
+    FieldMaterial, FieldSnapshot, FormationField, propagate_pressure_wave,
     update_material_from_fractures,
 };
 use super::model::{FormationSide, SLOT_SPACING};
@@ -67,41 +69,35 @@ pub fn run_scenario_experiment(
         let red_front_column = red.front_column();
         let blue_front_column = blue.front_column();
 
-        if let Some(contact) = detect_contact_request(
-            red.contact_front(red_front_column),
-            blue.contact_front(blue_front_column),
-            blue_profile,
-            ContactDetection {
-                contact_distance: settings.contact_distance,
-                base_pressure: settings.impact_strength * pulse,
-            },
-        ) {
-            contact
-                .resolve()
-                .apply_to_field(&mut red.field, settings.dt);
-        }
-        if let Some(contact) = detect_contact_request(
-            blue.contact_front(blue_front_column),
-            red.contact_front(red_front_column),
-            red_profile,
-            ContactDetection {
-                contact_distance: settings.contact_distance,
-                base_pressure: settings.impact_strength * pulse,
-            },
-        ) {
-            contact
-                .resolve()
-                .apply_to_field(&mut blue.field, settings.dt);
-        }
+        let detection = ContactDetection {
+            contact_distance: settings.contact_distance,
+            base_pressure: settings.impact_strength * pulse,
+        };
 
-        if scenario == LabScenario::FlankPressure {
-            inject_flank_pressure(
-                &mut blue.field,
-                settings.impact_strength,
-                pulse,
-                settings.dt,
-            );
-        }
+        apply_boundary_contacts(
+            BoundaryContactInput {
+                scenario,
+                target_side: FormationSide::Red,
+                target: red.contact_front(red_front_column),
+                incoming: blue.contact_front(blue_front_column),
+                incoming_profile: blue_profile,
+                detection,
+                dt: settings.dt,
+            },
+            &mut red.field,
+        );
+        apply_boundary_contacts(
+            BoundaryContactInput {
+                scenario,
+                target_side: FormationSide::Blue,
+                target: blue.contact_front(blue_front_column),
+                incoming: red.contact_front(red_front_column),
+                incoming_profile: red_profile,
+                detection,
+                dt: settings.dt,
+            },
+            &mut blue.field,
+        );
 
         red.step(settings.field_leak, settings.dt, tick);
         blue.step(settings.field_leak, settings.dt, tick);

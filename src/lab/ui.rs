@@ -22,7 +22,7 @@ pub fn lab_ui(
             .show(ctx, |ui| {
                 ui.label("Это не бой с атаками и уроном, а первая лаборатория FMP Layer 1.");
                 ui.label("Красный и синий строй представлены как материалы формации.");
-                ui.label("Пульс давления создаётся профилем противника: линия давит широко, клин бьёт в центр, фланг добавляет боковую волну.");
+                ui.label("Пульс давления создаётся через Contact Zone: профиль противника задаёт форму фронтального контакта, фланг — отдельный boundary по верхнему ряду.");
                 ui.label("Когда локальное давление выше прочности материала, слот ломается: он желтеет, проседает и смещается из строя.");
                 ui.label("Сломанные слоты повышают усталость и могут заражать соседей потерей структуры.");
                 ui.separator();
@@ -54,7 +54,7 @@ pub fn lab_ui(
                     "Жёлтый: fracture, слот строя потерял устойчивость.",
                 );
                 ui.label("Смещение назад показывает сжатие формации; боковой разъезд показывает потерю структуры.");
-                ui.label("В сценарии Flank pressure верхний край синей линии получает дополнительную боковую волну.");
+                ui.label("В сценарии Flank pressure верхний ряд синей линии получает дополнительную depth-волну через тот же contact pipeline.");
             });
         settings.show_legend = show_legend;
     }
@@ -99,6 +99,10 @@ pub fn lab_ui(
         ui.add(
             egui::Slider::new(&mut settings.impact_strength, 0.0..=18.0)
                 .text("boundary pressure"),
+        );
+        ui.add(
+            egui::Slider::new(&mut settings.contact_distance, 0.5..=12.0)
+                .text("contact distance"),
         );
         ui.add(egui::Slider::new(&mut settings.field_leak, 0.0..=0.3).text("field leak"));
         ui.add(egui::Slider::new(&mut settings.pulse_period, 0.4..=4.0).text("pulse period"));

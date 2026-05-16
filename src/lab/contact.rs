@@ -1,4 +1,6 @@
 use super::field::{FormationField, PressureProfile, pressure_profile_weight};
+use super::model::FormationSide;
+use super::scenario::LabScenario;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ContactRequest {
@@ -19,12 +21,12 @@ pub struct ContactRowRange {
 
 #[derive(Clone, Debug)]
 pub struct ContactBoundary {
-    pub front_column: usize,
     pub samples: Vec<ContactSample>,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct ContactSample {
+    pub column: usize,
     pub row: usize,
     pub normal_pressure: f32,
     pub compression: f32,
@@ -68,6 +70,7 @@ impl ContactRequest {
     pub fn resolve(self) -> ContactBoundary {
         let samples = (self.row_range.start..self.row_range.end.min(self.rows))
             .map(|row| ContactSample {
+                column: self.front_column,
                 row,
                 normal_pressure: self.normal_pressure
                     * pressure_profile_weight(self.incoming_profile, row, self.rows),
@@ -76,11 +79,19 @@ impl ContactRequest {
             })
             .collect();
 
-        ContactBoundary {
-            front_column: self.front_column,
-            samples,
-        }
+        ContactBoundary { samples }
     }
+}
+
+#[derive(Clone, Copy)]
+pub struct BoundaryContactInput {
+    pub scenario: LabScenario,
+    pub target_side: FormationSide,
+    pub target: ContactFront,
+    pub incoming: ContactFront,
+    pub incoming_profile: PressureProfile,
+    pub detection: ContactDetection,
+    pub dt: f32,
 }
 
 pub fn detect_contact_request(
@@ -109,18 +120,62 @@ pub fn detect_contact_request(
     })
 }
 
+pub fn flank_contact_boundary(
+    width: usize,
+    height: usize,
+    base_pressure: f32,
+    compression: f32,
+) -> ContactBoundary {
+    let flank_row = height.saturating_sub(1);
+    let max_column = (width.saturating_sub(1)).max(1) as f32;
+    let samples = (0..width)
+        .map(|column| {
+            let depth = column as f32 / max_column;
+            let depth_weight = 0.9 - depth * 0.35;
+            ContactSample {
+                column,
+                row: flank_row,
+                normal_pressure: base_pressure * 0.72 * depth_weight,
+                compression,
+                disruption: 0.0,
+            }
+        })
+        .collect();
+
+    ContactBoundary { samples }
+}
+
+pub fn apply_boundary_contacts(input: BoundaryContactInput, field: &mut FormationField) {
+    if let Some(contact) = detect_contact_request(
+        input.target,
+        input.incoming,
+        input.incoming_profile,
+        input.detection,
+    ) {
+        contact.resolve().apply_to_field(field, input.dt);
+    }
+
+    if input.scenario == LabScenario::FlankPressure && input.target_side == FormationSide::Blue {
+        flank_contact_boundary(
+            field.width,
+            field.height,
+            input.detection.base_pressure,
+            1.0,
+        )
+        .apply_to_field(field, input.dt);
+    }
+}
+
 impl ContactBoundary {
     pub fn apply_to_field(&self, field: &mut FormationField, dt: f32) {
-        debug_assert!(self.front_column < field.width);
-
         for sample in &self.samples {
-            if sample.row >= field.height {
+            if sample.column >= field.width || sample.row >= field.height {
                 continue;
             }
             debug_assert!(sample.compression >= 0.0);
             debug_assert!(sample.disruption >= 0.0);
 
-            let index = field.index(self.front_column, sample.row);
+            let index = field.index(sample.column, sample.row);
             field.pressure[index] += sample.normal_pressure * dt;
         }
     }
@@ -172,6 +227,16 @@ mod tests {
             compression: 0.4,
             disruption: 0.2,
         }
+    }
+
+    #[test]
+    fn flank_contact_boundary_is_stronger_near_the_outer_edge() {
+        let boundary = flank_contact_boundary(4, 3, 10.0, 1.0);
+        let flank_row = 2;
+
+        assert!(boundary.samples[0].normal_pressure > boundary.samples[3].normal_pressure);
+        assert_eq!(boundary.samples[0].row, flank_row);
+        assert_eq!(boundary.samples[3].row, flank_row);
     }
 
     #[test]

@@ -217,23 +217,6 @@ pub fn inject_front_pressure(
     }
 }
 
-pub fn inject_flank_pressure(
-    field: &mut FormationField,
-    impact_strength: f32,
-    pulse: f32,
-    dt: f32,
-) {
-    let flank_row = field.height - 1;
-    let max_column = (field.width - 1) as f32;
-
-    for column in 0..field.width {
-        let depth = column as f32 / max_column.max(1.0);
-        let depth_weight = 0.9 - depth * 0.35;
-        let index = field.index(column, flank_row);
-        field.pressure[index] += impact_strength * 0.72 * depth_weight * pulse * dt;
-    }
-}
-
 pub fn propagate_pressure_wave(
     material: FieldMaterial,
     field: &mut FormationField,
@@ -398,19 +381,6 @@ mod tests {
             assert_eq!(field.pressure[field.index(0, row)], 0.0);
             assert_eq!(field.pressure[field.index(1, row)], 0.0);
         }
-    }
-
-    #[test]
-    fn flank_pressure_is_stronger_near_the_outer_edge() {
-        let mut field = FormationField::new(4, 3);
-
-        inject_flank_pressure(&mut field, 10.0, 1.0, 1.0);
-
-        let flank_row = field.height - 1;
-        assert!(
-            field.pressure[field.index(0, flank_row)] > field.pressure[field.index(3, flank_row)]
-        );
-        assert_eq!(field.pressure[field.index(0, 0)], 0.0);
     }
 
     #[test]
