@@ -4,6 +4,7 @@ use super::model::{
     Formation, FormationField, FormationMaterial, FormationSide, PressureProfile, SlotVisual,
     SoldierSlot,
 };
+use super::scenario::{LabScenario, scenario_origin};
 use super::visuals::side_color;
 
 const COLUMNS: usize = 9;
@@ -51,7 +52,7 @@ pub fn setup(
         Formation {
             side: FormationSide::Red,
             profile: PressureProfile::Wedge,
-            origin: Vec3::new(-2.9, 0.12, 0.0),
+            origin: scenario_origin(LabScenario::WedgeVsLine, FormationSide::Red),
             forward: Vec3::X,
             columns: COLUMNS,
             rows: ROWS,
@@ -75,7 +76,7 @@ pub fn setup(
         Formation {
             side: FormationSide::Blue,
             profile: PressureProfile::Line,
-            origin: Vec3::new(2.9, 0.12, 0.0),
+            origin: scenario_origin(LabScenario::WedgeVsLine, FormationSide::Blue),
             forward: -Vec3::X,
             columns: COLUMNS,
             rows: ROWS,

@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 
+use super::contact::{ContactDetection, ContactFront, detect_contact_request};
 use super::field::{
-    inject_flank_pressure, inject_front_pressure, propagate_pressure_wave,
-    update_material_from_fractures,
+    inject_flank_pressure, propagate_pressure_wave, update_material_from_fractures,
 };
 use super::model::{Formation, FormationField, FormationMaterial, FormationSide, PressureProfile};
 use super::scenario::LabScenario;
@@ -21,27 +21,39 @@ pub fn run_fmp_layer_1(
     let elapsed = time.elapsed_secs();
     let mut red_profile = PressureProfile::Line;
     let mut blue_profile = PressureProfile::Line;
+    let mut red_front = None;
+    let mut blue_front = None;
 
     for (formation, _, _) in &formations {
         match formation.side {
-            FormationSide::Red => red_profile = formation.profile,
-            FormationSide::Blue => blue_profile = formation.profile,
+            FormationSide::Red => {
+                red_profile = formation.profile;
+                red_front = Some(formation.contact_front());
+            }
+            FormationSide::Blue => {
+                blue_profile = formation.profile;
+                blue_front = Some(formation.contact_front());
+            }
         }
     }
 
     for (formation, mut material, mut field) in &mut formations {
-        let incoming_profile = match formation.side {
-            FormationSide::Red => blue_profile,
-            FormationSide::Blue => red_profile,
+        let Some((incoming_profile, incoming_front)) = (match formation.side {
+            FormationSide::Red => blue_front.map(|front| (blue_profile, front)),
+            FormationSide::Blue => red_front.map(|front| (red_profile, front)),
+        }) else {
+            continue;
         };
 
         inject_boundary_pressure(
             settings.scenario,
             formation,
+            incoming_front,
             incoming_profile,
             &mut field,
             BoundaryPressure {
                 impact_strength: settings.impact_strength,
+                contact_distance: 5.0,
                 pulse_period: settings.pulse_period,
                 elapsed,
                 dt,
@@ -58,6 +70,7 @@ pub fn run_fmp_layer_1(
 #[derive(Clone, Copy)]
 struct BoundaryPressure {
     impact_strength: f32,
+    contact_distance: f32,
     pulse_period: f32,
     elapsed: f32,
     dt: f32,
@@ -66,27 +79,25 @@ struct BoundaryPressure {
 fn inject_boundary_pressure(
     scenario: LabScenario,
     formation: &Formation,
+    incoming_front: ContactFront,
     incoming_profile: PressureProfile,
     field: &mut FormationField,
     pressure: BoundaryPressure,
 ) {
-    let front_column = match formation.side {
-        FormationSide::Red => field.width - 1,
-        FormationSide::Blue => 0,
-    };
-
     let phase = (pressure.elapsed / pressure.pulse_period.max(0.1) * std::f32::consts::TAU).sin();
     let pulse = 0.35 + 0.65 * phase.max(0.0);
 
-    inject_front_pressure(
-        field,
-        front_column,
+    if let Some(contact) = detect_contact_request(
+        formation.contact_front(),
+        incoming_front,
         incoming_profile,
-        pressure.impact_strength,
-        pressure.pulse_period,
-        pressure.elapsed,
-        pressure.dt,
-    );
+        ContactDetection {
+            contact_distance: pressure.contact_distance,
+            base_pressure: pressure.impact_strength * pulse,
+        },
+    ) {
+        contact.resolve().apply_to_field(field, pressure.dt);
+    }
 
     if scenario == LabScenario::FlankPressure && formation.side == FormationSide::Blue {
         inject_flank_pressure(field, pressure.impact_strength, pulse, pressure.dt);

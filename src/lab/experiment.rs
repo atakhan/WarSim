@@ -1,9 +1,10 @@
+use super::contact::{ContactDetection, ContactFront, detect_contact_request};
 use super::field::{
-    FieldMaterial, FieldSnapshot, FormationField, inject_flank_pressure, inject_front_pressure,
-    propagate_pressure_wave, update_material_from_fractures,
+    FieldMaterial, FieldSnapshot, FormationField, inject_flank_pressure, propagate_pressure_wave,
+    update_material_from_fractures,
 };
-use super::model::FormationSide;
-use super::scenario::{LabScenario, scenario_preset};
+use super::model::{FormationSide, SLOT_SPACING};
+use super::scenario::{LabScenario, scenario_origin, scenario_preset};
 
 const COLUMNS: usize = 9;
 const ROWS: usize = 5;
@@ -13,6 +14,7 @@ pub struct ExperimentSettings {
     pub ticks: usize,
     pub dt: f32,
     pub impact_strength: f32,
+    pub contact_distance: f32,
     pub field_leak: f32,
     pub pulse_period: f32,
 }
@@ -23,6 +25,7 @@ impl Default for ExperimentSettings {
             ticks: 160,
             dt: 1.0 / 30.0,
             impact_strength: 9.0,
+            contact_distance: 5.0,
             field_leak: 0.08,
             pulse_period: 1.4,
         }
@@ -43,6 +46,8 @@ struct ExperimentFormation {
     side: FormationSide,
     material: FieldMaterial,
     field: FormationField,
+    lateral_center: f32,
+    front_position: f32,
     first_fracture_tick: Option<usize>,
 }
 
@@ -62,24 +67,32 @@ pub fn run_scenario_experiment(
         let red_front_column = red.front_column();
         let blue_front_column = blue.front_column();
 
-        inject_front_pressure(
-            &mut red.field,
-            red_front_column,
+        if let Some(contact) = detect_contact_request(
+            red.contact_front(red_front_column),
+            blue.contact_front(blue_front_column),
             blue_profile,
-            settings.impact_strength,
-            settings.pulse_period,
-            elapsed,
-            settings.dt,
-        );
-        inject_front_pressure(
-            &mut blue.field,
-            blue_front_column,
+            ContactDetection {
+                contact_distance: settings.contact_distance,
+                base_pressure: settings.impact_strength * pulse,
+            },
+        ) {
+            contact
+                .resolve()
+                .apply_to_field(&mut red.field, settings.dt);
+        }
+        if let Some(contact) = detect_contact_request(
+            blue.contact_front(blue_front_column),
+            red.contact_front(red_front_column),
             red_profile,
-            settings.impact_strength,
-            settings.pulse_period,
-            elapsed,
-            settings.dt,
-        );
+            ContactDetection {
+                contact_distance: settings.contact_distance,
+                base_pressure: settings.impact_strength * pulse,
+            },
+        ) {
+            contact
+                .resolve()
+                .apply_to_field(&mut blue.field, settings.dt);
+        }
 
         if scenario == LabScenario::FlankPressure {
             inject_flank_pressure(
@@ -108,10 +121,13 @@ fn pressure_pulse(pulse_period: f32, elapsed: f32) -> f32 {
 impl ExperimentFormation {
     fn new(scenario: LabScenario, side: FormationSide) -> Self {
         let (_, material) = scenario_preset(scenario, side);
+        let origin = scenario_origin(scenario, side);
         Self {
             side,
             material: material.as_field_material(),
             field: FormationField::new(COLUMNS, ROWS),
+            lateral_center: origin.z,
+            front_position: front_position(side, origin.x),
             first_fracture_tick: None,
         }
     }
@@ -120,6 +136,16 @@ impl ExperimentFormation {
         match self.side {
             FormationSide::Red => self.field.width - 1,
             FormationSide::Blue => 0,
+        }
+    }
+
+    fn contact_front(&self, front_column: usize) -> ContactFront {
+        ContactFront {
+            front_column,
+            rows: self.field.height,
+            row_spacing: SLOT_SPACING,
+            lateral_center: self.lateral_center,
+            front_position: self.front_position,
         }
     }
 
@@ -139,6 +165,16 @@ impl ExperimentFormation {
             snapshot: self.field.snapshot(),
             first_fracture_tick: self.first_fracture_tick,
         }
+    }
+}
+
+fn front_position(side: FormationSide, origin_x: f32) -> f32 {
+    let column_center = (COLUMNS as f32 - 1.0) * 0.5;
+    let half_depth = column_center * SLOT_SPACING;
+
+    match side {
+        FormationSide::Red => origin_x + half_depth,
+        FormationSide::Blue => origin_x - half_depth,
     }
 }
 
@@ -190,6 +226,22 @@ mod tests {
             flank.blue.snapshot.upper_flank_fracture_ratio
                 > flank.blue.snapshot.lower_flank_fracture_ratio
         );
+    }
+
+    #[test]
+    fn offset_contact_limits_blue_damage_to_overlapped_flank() {
+        let offset = run_scenario_experiment(
+            LabScenario::OffsetContact,
+            ExperimentSettings {
+                ticks: 180,
+                ..ExperimentSettings::default()
+            },
+        );
+
+        assert!(
+            offset.blue.snapshot.upper_flank_pressure > offset.blue.snapshot.lower_flank_pressure
+        );
+        assert!(offset.blue.snapshot.flank_pressure_asymmetry() > 0.0);
     }
 
     #[test]

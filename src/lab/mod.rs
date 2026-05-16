@@ -1,3 +1,4 @@
+pub mod contact;
 #[cfg(test)]
 pub mod experiment;
 pub mod field;

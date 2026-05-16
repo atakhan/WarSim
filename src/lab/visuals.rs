@@ -1,9 +1,9 @@
 use bevy::prelude::*;
 
-use super::model::{Formation, FormationField, FormationSide, SlotVisual, SoldierSlot};
+use super::model::{
+    Formation, FormationField, FormationSide, SLOT_SPACING, SlotVisual, SoldierSlot,
+};
 use super::settings::LabSettings;
-
-const SLOT_SPACING: f32 = 0.62;
 
 pub fn update_soldier_visuals(
     settings: Res<LabSettings>,

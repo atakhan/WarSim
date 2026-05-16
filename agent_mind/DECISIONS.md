@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-05-16 — Layer 2 начинается с чистого contact contract
+
+Status: accepted  
+Context: После стабилизации Layer 1 возник переход к Contact Zone. Подключать Avian сразу рискованно: можно смешать физдвижок, геометрию контакта и обратную связь в Formation Field в один неотделимый слой.  
+Decision: Layer 2 сначала фиксируется как чистый контракт `ContactRequest -> ContactBoundary -> FormationField`, без Avian. Production simulation и test-only scenario harness должны идти через этот контракт.  
+Rationale: Контракт даёт тестируемую границу между Contact Zone и Formation Field: pressure samples по front row, compression/disruption как будущие данные контакта, и отдельное применение boundary к полю. Это позволяет позже заменить источник `ContactBoundary` на Avian/реальные тела без переписывания Layer 1.  
+Consequences: До подключения Avian новые работы по Layer 2 должны сохранять этот интерфейс или явно пересматривать решение. Synthetic boundary pressure не должен обходить `ContactBoundary` в production path.  
+Links: [`modules/fmp.md`](modules/fmp.md), [`FMP.md`](../knowledge_base/FMP.md) §3.2, §7.2
+
+---
+
 ## 2026-05-16 — Анизотропия через взвешенный Лапласиан в Слое 1
 
 Status: accepted  

@@ -1,7 +1,10 @@
 use bevy::prelude::*;
 
+use super::contact::ContactFront;
 use super::field::FieldMaterial;
 pub use super::field::{FormationField, PressureProfile};
+
+pub const SLOT_SPACING: f32 = 0.62;
 
 #[derive(Component, Clone, Copy)]
 pub struct Formation {
@@ -13,7 +16,29 @@ pub struct Formation {
     pub rows: usize,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+impl Formation {
+    pub fn front_column(self) -> usize {
+        match self.side {
+            FormationSide::Red => self.columns - 1,
+            FormationSide::Blue => 0,
+        }
+    }
+
+    pub fn contact_front(self) -> ContactFront {
+        let column_center = (self.columns as f32 - 1.0) * 0.5;
+        let half_depth = column_center * SLOT_SPACING;
+
+        ContactFront {
+            front_column: self.front_column(),
+            rows: self.rows,
+            row_spacing: SLOT_SPACING,
+            lateral_center: self.origin.z,
+            front_position: self.origin.x + self.forward.x.signum() * half_depth,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FormationSide {
     Red,
     Blue,

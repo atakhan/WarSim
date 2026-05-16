@@ -156,6 +156,12 @@ pub fn lab_ui(
                     snapshot.rear_fracture_ratio * 100.0
                 ));
                 ui.label(format!(
+                    "flank pressure upper/lower: {:.2}/{:.2} (Δ {:.2})",
+                    snapshot.upper_flank_pressure,
+                    snapshot.lower_flank_pressure,
+                    snapshot.flank_pressure_asymmetry()
+                ));
+                ui.label(format!(
                     "flank fracture upper/lower: {:.0}%/{:.0}% (Δ {:.0}%)",
                     snapshot.upper_flank_fracture_ratio * 100.0,
                     snapshot.lower_flank_fracture_ratio * 100.0,

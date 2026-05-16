@@ -17,15 +17,17 @@ pub type FormationScenarioQuery<'w, 's> = Query<
 pub enum LabScenario {
     LineVsLine,
     WedgeVsLine,
+    OffsetContact,
     FlankPressure,
     LowMoraleDefense,
     FatiguedDefense,
 }
 
 impl LabScenario {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::LineVsLine,
         Self::WedgeVsLine,
+        Self::OffsetContact,
         Self::FlankPressure,
         Self::LowMoraleDefense,
         Self::FatiguedDefense,
@@ -35,6 +37,7 @@ impl LabScenario {
         match self {
             Self::LineVsLine => "Line vs line",
             Self::WedgeVsLine => "Wedge vs line",
+            Self::OffsetContact => "Offset contact",
             Self::FlankPressure => "Flank pressure",
             Self::LowMoraleDefense => "Low morale defense",
             Self::FatiguedDefense => "Fatigued defense",
@@ -48,6 +51,9 @@ impl LabScenario {
             }
             Self::WedgeVsLine => {
                 "Красный клин концентрирует давление в центре синей линии, проверяя пробой yield."
+            }
+            Self::OffsetContact => {
+                "Красный строй смещён к флангу: Contact Zone давит только на перекрытые ряды."
             }
             Self::FlankPressure => {
                 "Синяя линия получает фронтальное давление и дополнительную волну с фланга."
@@ -69,6 +75,9 @@ impl LabScenario {
             Self::WedgeVsLine => {
                 "Смотри на концентрацию pressure/fracture в центре обороняющейся линии."
             }
+            Self::OffsetContact => {
+                "Смотри на частичный вход давления: верхний фланг синей линии должен ломаться раньше нижнего."
+            }
             Self::FlankPressure => {
                 "Смотри на диагональную волну и ранний fracture у края, где сходятся фронт и фланг."
             }
@@ -86,8 +95,21 @@ pub fn apply_scenario(scenario: LabScenario, formations: &mut FormationScenarioQ
     for (_, mut formation, mut material, mut field) in formations {
         let (profile, preset) = scenario_preset(scenario, formation.side);
         formation.profile = profile;
+        formation.origin = scenario_origin(scenario, formation.side);
         *material = preset;
         field.reset();
+    }
+}
+
+pub fn scenario_origin(scenario: LabScenario, side: FormationSide) -> Vec3 {
+    let lateral_offset = match (scenario, side) {
+        (LabScenario::OffsetContact, FormationSide::Red) => 1.55,
+        _ => 0.0,
+    };
+
+    match side {
+        FormationSide::Red => Vec3::new(-2.9, 0.12, lateral_offset),
+        FormationSide::Blue => Vec3::new(2.9, 0.12, 0.0),
     }
 }
 
@@ -142,6 +164,30 @@ pub fn scenario_preset(
                 viscosity: 1.1,
                 morale: 0.9,
                 fatigue: 0.08,
+            },
+        ),
+        (LabScenario::OffsetContact, FormationSide::Red) => (
+            PressureProfile::Line,
+            FormationMaterial {
+                stiffness: 6.5,
+                forward_multiplier: 1.0,
+                lateral_multiplier: 1.0,
+                yield_strength: 5.8,
+                viscosity: 1.0,
+                morale: 0.86,
+                fatigue: 0.08,
+            },
+        ),
+        (LabScenario::OffsetContact, FormationSide::Blue) => (
+            PressureProfile::Line,
+            FormationMaterial {
+                stiffness: 6.1,
+                forward_multiplier: 1.0,
+                lateral_multiplier: 1.0,
+                yield_strength: 5.6,
+                viscosity: 1.05,
+                morale: 0.84,
+                fatigue: 0.1,
             },
         ),
         (LabScenario::FlankPressure, FormationSide::Red) => (

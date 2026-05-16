@@ -1,6 +1,6 @@
 use bevy::prelude::Component;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum PressureProfile {
     Line,
     Wedge,
@@ -101,6 +101,8 @@ impl FormationField {
         FieldSnapshot {
             center_pressure: center.average_pressure,
             edge_pressure: edge.average_pressure,
+            upper_flank_pressure: upper_flank.average_pressure,
+            lower_flank_pressure: lower_flank.average_pressure,
             center_fracture_ratio: center.fracture_ratio,
             edge_fracture_ratio: edge.fracture_ratio,
             front_fracture_ratio: front.fracture_ratio,
@@ -148,6 +150,8 @@ pub struct FieldMetrics {
 pub struct FieldSnapshot {
     pub center_pressure: f32,
     pub edge_pressure: f32,
+    pub upper_flank_pressure: f32,
+    pub lower_flank_pressure: f32,
     pub center_fracture_ratio: f32,
     pub edge_fracture_ratio: f32,
     pub front_fracture_ratio: f32,
@@ -159,6 +163,10 @@ pub struct FieldSnapshot {
 impl FieldSnapshot {
     pub fn flank_fracture_asymmetry(self) -> f32 {
         (self.upper_flank_fracture_ratio - self.lower_flank_fracture_ratio).abs()
+    }
+
+    pub fn flank_pressure_asymmetry(self) -> f32 {
+        (self.upper_flank_pressure - self.lower_flank_pressure).abs()
     }
 }
 
@@ -185,6 +193,7 @@ fn average_region_metrics(first: RegionMetrics, second: RegionMetrics) -> Region
     }
 }
 
+#[cfg(test)]
 pub fn inject_front_pressure(
     field: &mut FormationField,
     front_column: usize,
@@ -201,8 +210,10 @@ pub fn inject_front_pressure(
 
     for row in 0..field.height {
         let index = field.index(front_column, row);
-        field.pressure[index] +=
-            impact_strength * profile_weight(incoming_profile, row, field.height) * pulse * dt;
+        field.pressure[index] += impact_strength
+            * pressure_profile_weight(incoming_profile, row, field.height)
+            * pulse
+            * dt;
     }
 }
 
@@ -313,7 +324,7 @@ pub fn update_material_from_fractures(
     material.fatigue = (material.fatigue + fracture_ratio * 0.025 * dt).clamp(0.0, 1.0);
 }
 
-fn profile_weight(profile: PressureProfile, row: usize, height: usize) -> f32 {
+pub fn pressure_profile_weight(profile: PressureProfile, row: usize, height: usize) -> f32 {
     let center_row = (height as f32 - 1.0) * 0.5;
     let max_distance = center_row.max(1.0);
     let distance_from_center = (row as f32 - center_row).abs();
@@ -367,12 +378,12 @@ mod tests {
         let center_row = 2;
 
         assert!(
-            profile_weight(PressureProfile::Wedge, center_row, 5)
-                > profile_weight(PressureProfile::Line, center_row, 5)
+            pressure_profile_weight(PressureProfile::Wedge, center_row, 5)
+                > pressure_profile_weight(PressureProfile::Line, center_row, 5)
         );
         assert!(
-            profile_weight(PressureProfile::Wedge, 0, 5)
-                < profile_weight(PressureProfile::Line, 0, 5)
+            pressure_profile_weight(PressureProfile::Wedge, 0, 5)
+                < pressure_profile_weight(PressureProfile::Line, 0, 5)
         );
     }
 

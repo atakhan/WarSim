@@ -35,6 +35,28 @@ Avian — только шаг между 4 и 6 (слои 2–3).
 
 Это важная граница модели: профиль формации задаёт не только то, как она давит на противника, но и то, как она сама проводит и ломает давление. `Line` сейчас служит почти изотропным контролем; `Wedge` — жёсткий по оси атаки и слабее связан сбоку. Для следующих архетипов (Phalanx, Crowd) эти множители должны быть главным отличием поведения.
 
+## Layer 2: Contact contract перед Avian
+
+Переход к Contact Zone начинается не с физдвижка, а с устойчивой границы:
+
+`ContactRequest -> ContactBoundary -> FormationField`
+
+Текущий смысл:
+
+- `ContactRequest` описывает запрос контакта: front column, число рядов, входящий pressure profile, normal pressure, compression, disruption.
+- `ContactBoundary` — результат Layer 2 для Layer 1: pressure samples по front row.
+- `FormationField` принимает boundary и дальше распространяет давление уже своими Layer 1 правилами.
+
+Добавлен первый pure contact detection:
+
+- `ContactFront` описывает фронт формации без Bevy/Avian: front column, rows, row spacing, lateral center, front position.
+- `ContactDetection` задаёт contact distance и base pressure.
+- `detect_contact_request` возвращает `None`, если фронты не сжаты или не перекрываются по флангу; иначе считает compression, normal pressure и активный `ContactRowRange`.
+
+`ContactFront` теперь строится из реальной `Formation` geometry (`origin`, `forward`, rows, slot spacing), а не из условных нулей. Добавлен сценарий `OffsetContact`: Red смещён по флангу, поэтому `ContactRowRange` давит только на перекрытую часть Blue front row; regression test закрепляет flank pressure asymmetry.
+
+Важно: production `simulation.rs` и test-only `experiment.rs` уже идут через этот контракт. Avian позже должен стать источником `ContactBoundary` или более точных `ContactRequest`, а не заменить Layer 1 напрямую.
+
 ## Открыто в памяти
 
 - Дискретизация поля: [`OPEN_QUESTIONS.md`](../OPEN_QUESTIONS.md) Q-001
