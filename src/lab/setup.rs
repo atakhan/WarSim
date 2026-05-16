@@ -1,20 +1,24 @@
 use bevy::prelude::*;
 
 use super::model::{
-    Formation, FormationField, FormationMaterial, FormationSide, PressureProfile, SlotVisual,
+    Formation, FormationField, FormationHero, FormationMaterial, FormationSide, SlotVisual,
     SoldierSlot,
 };
-use super::scenario::{LabScenario, scenario_origin};
+use super::avian::attach_contact_zone_collider;
+use super::scenario::{scenario_origin, scenario_preset};
+use super::settings::LabSettings;
 use super::visuals::side_color;
 
 const COLUMNS: usize = 9;
 const ROWS: usize = 5;
 
 pub fn setup(
+    settings: Res<LabSettings>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    let scenario = settings.scenario;
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(0.0, 13.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
@@ -44,52 +48,39 @@ pub fn setup(
 
     let soldier_mesh = meshes.add(Cuboid::new(0.42, 0.24, 0.42));
 
+    let (red_profile, red_material) = scenario_preset(scenario, FormationSide::Red);
+    let (blue_profile, blue_material) = scenario_preset(scenario, FormationSide::Blue);
+
     spawn_formation(
         &mut commands,
         &mut materials,
         &soldier_mesh,
-        "Red wedge",
+        "Red formation",
         Formation {
             side: FormationSide::Red,
-            profile: PressureProfile::Wedge,
-            origin: scenario_origin(LabScenario::WedgeVsLine, FormationSide::Red),
+            profile: red_profile,
+            origin: scenario_origin(scenario, FormationSide::Red),
             forward: Vec3::X,
             columns: COLUMNS,
             rows: ROWS,
         },
-        FormationMaterial {
-            stiffness: 7.0,
-            forward_multiplier: 1.5,
-            lateral_multiplier: 0.5,
-            yield_strength: 5.3,
-            viscosity: 0.9,
-            morale: 0.82,
-            fatigue: 0.12,
-        },
+        red_material,
     );
 
     spawn_formation(
         &mut commands,
         &mut materials,
         &soldier_mesh,
-        "Blue line",
+        "Blue formation",
         Formation {
             side: FormationSide::Blue,
-            profile: PressureProfile::Line,
-            origin: scenario_origin(LabScenario::WedgeVsLine, FormationSide::Blue),
+            profile: blue_profile,
+            origin: scenario_origin(scenario, FormationSide::Blue),
             forward: -Vec3::X,
             columns: COLUMNS,
             rows: ROWS,
         },
-        FormationMaterial {
-            stiffness: 6.2,
-            forward_multiplier: 1.0,
-            lateral_multiplier: 1.0,
-            yield_strength: 5.8,
-            viscosity: 1.1,
-            morale: 0.9,
-            fatigue: 0.08,
-        },
+        blue_material,
     );
 }
 
@@ -106,6 +97,9 @@ fn spawn_formation(
         .spawn((Name::new(name), formation, material, field))
         .id();
 
+    let hero_row = formation.rows / 2;
+    let hero_column = formation.front_column();
+
     for row in 0..formation.rows {
         for column in 0..formation.columns {
             let slot_index = row * formation.columns + column;
@@ -116,7 +110,7 @@ fn spawn_formation(
                 ..default()
             });
 
-            commands.spawn((
+            let mut soldier = commands.spawn((
                 Mesh3d(soldier_mesh.clone()),
                 MeshMaterial3d(slot_material.clone()),
                 Transform::default(),
@@ -130,6 +124,14 @@ fn spawn_formation(
                     material: slot_material,
                 },
             ));
+
+            if column == formation.front_column() {
+                attach_contact_zone_collider(&mut soldier, formation.side);
+            }
+
+            if formation.side == FormationSide::Red && column == hero_column && row == hero_row {
+                soldier.insert(FormationHero);
+            }
         }
     }
 }

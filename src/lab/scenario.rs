@@ -15,37 +15,50 @@ pub type FormationScenarioQuery<'w, 's> = Query<
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum LabScenario {
+    /// Фиксированный пресет для демонстрации без слайдеров (Offset + approach + Avian).
+    GuidedDemo,
     LineVsLine,
     WedgeVsLine,
     OffsetContact,
     FlankPressure,
     LowMoraleDefense,
     FatiguedDefense,
+    PhalanxVsCrowd,
+    WedgeVsPhalanx,
 }
 
 impl LabScenario {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 9] = [
+        Self::GuidedDemo,
         Self::LineVsLine,
         Self::WedgeVsLine,
+        Self::WedgeVsPhalanx,
         Self::OffsetContact,
         Self::FlankPressure,
         Self::LowMoraleDefense,
         Self::FatiguedDefense,
+        Self::PhalanxVsCrowd,
     ];
 
     pub fn label(self) -> &'static str {
         match self {
+            Self::GuidedDemo => "Guided demo (no sliders)",
             Self::LineVsLine => "Line vs line",
             Self::WedgeVsLine => "Wedge vs line",
             Self::OffsetContact => "Offset contact",
             Self::FlankPressure => "Flank pressure",
             Self::LowMoraleDefense => "Low morale defense",
             Self::FatiguedDefense => "Fatigued defense",
+            Self::PhalanxVsCrowd => "Phalanx vs crowd",
+            Self::WedgeVsPhalanx => "Wedge vs phalanx",
         }
     }
 
     pub fn description(self) -> &'static str {
         match self {
+            Self::GuidedDemo => {
+                "Красный строй смещён к флангу и сближается с синей линией. Контакт только на перекрытой части фронта — демонстрация FMP без ручной подстройки."
+            }
             Self::LineVsLine => {
                 "Базовый контроль: равные линии распределяют давление широким фронтом."
             }
@@ -64,11 +77,20 @@ impl LabScenario {
             Self::FatiguedDefense => {
                 "Синяя линия устала: давление хуже гасится, fracture быстрее заражает соседей."
             }
+            Self::PhalanxVsCrowd => {
+                "Красная фаланга (жёсткий связный материал) давит на синюю толпу (высокая вязкость, слабая связь)."
+            }
+            Self::WedgeVsPhalanx => {
+                "Красный клин бьёт в синюю фалангу: профиль давления vs жёсткий связный материал обороны."
+            }
         }
     }
 
     pub fn watch_for(self) -> &'static str {
         match self {
+            Self::GuidedDemo => {
+                "Верхний фланг синей линии: серые/разъехавшиеся кубики и fracture раньше, чем на неперекрытом нижнем фронте."
+            }
             Self::LineVsLine => {
                 "Смотри на широкое равномерное давление без быстрого каскадного слома."
             }
@@ -87,6 +109,30 @@ impl LabScenario {
             Self::FatiguedDefense => {
                 "Смотри, как fatigue снижает effective yield и ускоряет распространение fracture."
             }
+            Self::PhalanxVsCrowd => {
+                "Смотри, как толпа раньше ломается по фронту и шире размазывает давление к флангам, чем держала бы фаланга."
+            }
+            Self::WedgeVsPhalanx => {
+                "Сравни с Wedge vs line: центр всё ещё получает пик давления, но fracture на фаланге позже и слабее. Удобно с red advances only."
+            }
+        }
+    }
+
+    pub fn locks_tuning(self) -> bool {
+        matches!(self, Self::GuidedDemo)
+    }
+
+    pub fn guided_checklist(self) -> &'static [&'static str] {
+        match self {
+            Self::GuidedDemo => &[
+                "Золотой куб на красном фронте — герой; каждые ~2.5 с thrust (GIC) в синий строй.",
+                "Красный смещён к верхнему флангу — давление не на всю ширину синего фронта.",
+                "Красный сам сближается (red advances only); compression растёт по мере контакта.",
+                "На перекрытом участке: disruption → падение organization → проще fracture.",
+                "Нижний неперекрытый фронт синего дольше держит строй (экспонированный фронт слабее).",
+                "Окна Red / Blue formation — пик давления и front organization min.",
+            ],
+            _ => &[],
         }
     }
 }
@@ -103,7 +149,7 @@ pub fn apply_scenario(scenario: LabScenario, formations: &mut FormationScenarioQ
 
 pub fn scenario_origin(scenario: LabScenario, side: FormationSide) -> Vec3 {
     let lateral_offset = match (scenario, side) {
-        (LabScenario::OffsetContact, FormationSide::Red) => 1.55,
+        (LabScenario::OffsetContact | LabScenario::GuidedDemo, FormationSide::Red) => 1.55,
         _ => 0.0,
     };
 
@@ -166,7 +212,7 @@ pub fn scenario_preset(
                 fatigue: 0.08,
             },
         ),
-        (LabScenario::OffsetContact, FormationSide::Red) => (
+        (LabScenario::OffsetContact | LabScenario::GuidedDemo, FormationSide::Red) => (
             PressureProfile::Line,
             FormationMaterial {
                 stiffness: 6.5,
@@ -178,7 +224,7 @@ pub fn scenario_preset(
                 fatigue: 0.08,
             },
         ),
-        (LabScenario::OffsetContact, FormationSide::Blue) => (
+        (LabScenario::OffsetContact | LabScenario::GuidedDemo, FormationSide::Blue) => (
             PressureProfile::Line,
             FormationMaterial {
                 stiffness: 6.1,
@@ -262,5 +308,53 @@ pub fn scenario_preset(
                 fatigue: 0.62,
             },
         ),
+        (LabScenario::PhalanxVsCrowd, FormationSide::Red) => (
+            PressureProfile::Line,
+            phalanx_material(),
+        ),
+        (LabScenario::PhalanxVsCrowd, FormationSide::Blue) => (
+            PressureProfile::Line,
+            crowd_material(),
+        ),
+        (LabScenario::WedgeVsPhalanx, FormationSide::Red) => (
+            PressureProfile::Wedge,
+            FormationMaterial {
+                stiffness: 7.0,
+                forward_multiplier: 1.5,
+                lateral_multiplier: 0.5,
+                yield_strength: 5.3,
+                viscosity: 0.9,
+                morale: 0.82,
+                fatigue: 0.12,
+            },
+        ),
+        (LabScenario::WedgeVsPhalanx, FormationSide::Blue) => (
+            PressureProfile::Line,
+            phalanx_material(),
+        ),
+    }
+}
+
+fn phalanx_material() -> FormationMaterial {
+    FormationMaterial {
+        stiffness: 8.2,
+        forward_multiplier: 1.15,
+        lateral_multiplier: 1.1,
+        yield_strength: 6.8,
+        viscosity: 0.72,
+        morale: 0.92,
+        fatigue: 0.06,
+    }
+}
+
+fn crowd_material() -> FormationMaterial {
+    FormationMaterial {
+        stiffness: 4.0,
+        forward_multiplier: 0.85,
+        lateral_multiplier: 0.65,
+        yield_strength: 4.6,
+        viscosity: 1.95,
+        morale: 0.58,
+        fatigue: 0.18,
     }
 }

@@ -36,7 +36,20 @@ impl Formation {
             front_position: self.origin.x + self.forward.x.signum() * half_depth,
         }
     }
+
+    #[cfg(test)]
+    pub fn slot_position(self, column: usize, row: usize) -> Vec3 {
+        let row_center = (self.rows as f32 - 1.0) * 0.5;
+        let column_center = (self.columns as f32 - 1.0) * 0.5;
+        let row_offset = (row as f32 - row_center) * SLOT_SPACING;
+        let column_offset = (column as f32 - column_center) * SLOT_SPACING;
+        self.origin + Vec3::new(column_offset, 0.12, row_offset)
+    }
 }
+
+/// Маркер героя на одном слоте строя (источник GIC, не отдельная боевая петля).
+#[derive(Component)]
+pub struct FormationHero;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FormationSide {

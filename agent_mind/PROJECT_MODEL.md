@@ -12,7 +12,7 @@
 
 ## Текущая фаза
 
-**Первая Bevy/FMP-лаборатория.** Есть Rust/Bevy scaffold и runnable-заготовка Layer 1: два отряда, поле давления, локальный слом, debug UI параметров материала и анизотропия формаций через взвешенный Лапласиан. Математика Formation Field вынесена в тестируемый модуль с unit-инвариантами для профилей давления, fracture, анизотропии и morale/fatigue drift; добавлен test-only scenario harness с regression-проверками Wedge/Flank/LowMorale/OffsetContact и UI snapshot-метриками center/edge/front/rear/flank pressure/fracture. Начат Layer 2 contract: `ContactFront/ContactDetection -> ContactRequest -> ContactBoundary -> FormationField`, пока без Avian, но уже используется production simulation и test harness; `ContactFront` строится из реальной `Formation` geometry. Есть CI для `fmt`, `clippy` и `cargo test`. Пользовательская оценка первой Layer 1 версии — приемлемо; теперь калибруем поведение формаций и готовим Contact Zone перед подключением физдвижка. Это ещё не игра и ещё не доказательство полной HYP-001.
+**Первая Bevy/FMP-лаборатория.** Layer 1–2 + **GIC v0**: герой (`FormationHero`) → геометрический thrust → `GicImpulse` в `ContactBoundary`. Avian v2, Guided demo (GIC auto). Следующий фокус — Avian shapecast для GIC, затем моральный слом / выбой (§5 FMP).
 
 ## Ядро симуляции
 

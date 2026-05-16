@@ -57,6 +57,28 @@ Avian — только шаг между 4 и 6 (слои 2–3).
 
 Важно: production `simulation.rs` и test-only `experiment.rs` уже идут через этот контракт. Avian позже должен стать источником `ContactBoundary` или более точных `ContactRequest`, а не заменить Layer 1 напрямую.
 
+## Formation approach (lab)
+
+`FormationMotion`: `Static`, `ApproachBoth`, `ApproachRed`, `ApproachBlue`. Движение только у выбранных сторон; остановка когда `front_gap <= advancing_sides * speed * dt`. Compression в detection: `compression_from_gap(gap, contact_distance)`.
+
+## Архетипы материала: Phalanx vs Crowd
+
+Сценарий `PhalanxVsCrowd`: Red — phalanx material; Blue — crowd material. Regression: crowd ломается раньше line-defense.
+
+`WedgeVsPhalanx`: тот же атакующий клин, что в `WedgeVsLine`, но Blue — phalanx material. Regression: центр по-прежнему получает пик давления (профиль клина), но fracture позже и слабее, чем против обычной линии — разделение «форма удара» vs «прочность материала».
+
+## Disruption → организованность
+
+`disruption = 1 - overlap_ratio` при частичном фронтальном перекрытии. `ContactBoundary::apply_to_field`:
+
+- давление на слоты `row_range`;
+- падение `FormationField.organization` на контакте;
+- на неперекрытых рядах фронта — ослабленное `apply_exposed_front_disruption`.
+
+В Layer 1 `effective_yield` умножается на локальную `organization`. UI: `front organization min`. Regression: `OffsetContact` сильнее снижает organization, чем полный `LineVsLine`.
+
+Дизайн Avian: [`avian_contact.md`](avian_contact.md).
+
 ## Открыто в памяти
 
 - Дискретизация поля: [`OPEN_QUESTIONS.md`](../OPEN_QUESTIONS.md) Q-001

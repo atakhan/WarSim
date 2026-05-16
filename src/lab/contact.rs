@@ -1,8 +1,9 @@
 use super::field::{FormationField, PressureProfile, pressure_profile_weight};
 use super::model::FormationSide;
+use super::motion::compression_from_gap;
 use super::scenario::LabScenario;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ContactRequest {
     pub front_column: usize,
     pub rows: usize,
@@ -13,7 +14,7 @@ pub struct ContactRequest {
     pub disruption: f32,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ContactRowRange {
     pub start: usize,
     pub end: usize,
@@ -92,6 +93,38 @@ pub struct BoundaryContactInput {
     pub incoming_profile: PressureProfile,
     pub detection: ContactDetection,
     pub dt: f32,
+    /// Layer 3 v0: геометрический thrust героя, усиливает boundary (не пишет в поле напрямую).
+    pub gic_impulse: Option<super::gic::GicImpulse>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ContactDiagnostics {
+    pub overlap_ratio: f32,
+    pub disruption: f32,
+    pub compression: f32,
+    pub row_range: ContactRowRange,
+}
+
+pub fn contact_diagnostics(
+    target: ContactFront,
+    incoming: ContactFront,
+    detection: ContactDetection,
+) -> Option<ContactDiagnostics> {
+    let front_gap = (target.front_position - incoming.front_position).abs();
+    let compression = compression_from_gap(front_gap, detection.contact_distance);
+    if compression <= 0.0 {
+        return None;
+    }
+
+    let row_range = target.overlap_rows(incoming)?;
+    let overlap_ratio = row_range.len() as f32 / target.rows.max(1) as f32;
+
+    Some(ContactDiagnostics {
+        overlap_ratio,
+        disruption: 1.0 - overlap_ratio,
+        compression,
+        row_range,
+    })
 }
 
 pub fn detect_contact_request(
@@ -100,23 +133,17 @@ pub fn detect_contact_request(
     incoming_profile: PressureProfile,
     detection: ContactDetection,
 ) -> Option<ContactRequest> {
-    let front_gap = (target.front_position - incoming.front_position).abs();
-    let compression = (detection.contact_distance - front_gap).max(0.0);
-    if compression <= 0.0 {
-        return None;
-    }
-
-    let row_range = target.overlap_rows(incoming)?;
-    let overlap_ratio = row_range.len() as f32 / target.rows.max(1) as f32;
+    let diagnostics = contact_diagnostics(target, incoming, detection)?;
 
     Some(ContactRequest {
         front_column: target.front_column,
         rows: target.rows,
-        row_range,
+        row_range: diagnostics.row_range,
         incoming_profile,
-        normal_pressure: detection.base_pressure * (compression / detection.contact_distance),
-        compression,
-        disruption: 1.0 - overlap_ratio,
+        normal_pressure: detection.base_pressure
+            * (diagnostics.compression / detection.contact_distance),
+        compression: diagnostics.compression,
+        disruption: diagnostics.disruption,
     })
 }
 
@@ -145,14 +172,51 @@ pub fn flank_contact_boundary(
     ContactBoundary { samples }
 }
 
-pub fn apply_boundary_contacts(input: BoundaryContactInput, field: &mut FormationField) {
-    if let Some(contact) = detect_contact_request(
-        input.target,
-        input.incoming,
-        input.incoming_profile,
-        input.detection,
-    ) {
-        contact.resolve().apply_to_field(field, input.dt);
+pub fn apply_boundary_contacts(
+    probe: super::probe::ContactProbeKind,
+    input: BoundaryContactInput,
+    field: &mut FormationField,
+    avian_cache: Option<&super::avian::AvianContactCache>,
+) {
+    let probe_input = super::probe::ContactProbeInput {
+        target: input.target,
+        incoming: input.incoming,
+        incoming_profile: input.incoming_profile,
+        detection: input.detection,
+    };
+
+    let contact = super::probe::detect_with_probe(
+        probe,
+        probe_input,
+        input.target_side,
+        avian_cache,
+    );
+
+    let mut boundary = contact.map(|c| c.resolve());
+    if let Some(gic) = input.gic_impulse
+        && gic.target_side == input.target_side
+        && !gic.is_empty()
+    {
+        match &mut boundary {
+            Some(b) => gic.merge_into_boundary(b),
+            None => boundary = Some(gic.to_boundary()),
+        }
+    }
+
+    if let Some(boundary) = boundary {
+        boundary.apply_to_field(field, input.dt);
+        if let Some(contact) = contact
+            && contact.disruption > 0.05
+        {
+            apply_exposed_front_disruption(
+                field,
+                contact.front_column,
+                contact.row_range,
+                contact.disruption,
+                contact.compression,
+                input.dt,
+            );
+        }
     }
 
     if input.scenario == LabScenario::FlankPressure && input.target_side == FormationSide::Blue {
@@ -166,6 +230,9 @@ pub fn apply_boundary_contacts(input: BoundaryContactInput, field: &mut Formatio
     }
 }
 
+/// Скорость потери организованности от disruption при контакте (1/с при disruption=1).
+pub const DISRUPTION_ORGANIZATION_RATE: f32 = 1.35;
+
 impl ContactBoundary {
     pub fn apply_to_field(&self, field: &mut FormationField, dt: f32) {
         for sample in &self.samples {
@@ -177,7 +244,39 @@ impl ContactBoundary {
 
             let index = field.index(sample.column, sample.row);
             field.pressure[index] += sample.normal_pressure * dt;
+
+            if sample.disruption > 0.0 {
+                let contact_intensity =
+                    sample.disruption * (0.3 + sample.compression.min(1.0) * 0.7);
+                let loss = contact_intensity * dt * DISRUPTION_ORGANIZATION_RATE;
+                field.organization[index] =
+                    (field.organization[index] - loss).max(super::field::MIN_SLOT_ORGANIZATION);
+            }
         }
+    }
+}
+
+fn apply_exposed_front_disruption(
+    field: &mut FormationField,
+    front_column: usize,
+    covered_rows: ContactRowRange,
+    disruption: f32,
+    compression: f32,
+    dt: f32,
+) {
+    let exposure = disruption * (0.25 + compression.min(1.0) * 0.75) * 0.55;
+    if exposure <= 0.0 {
+        return;
+    }
+
+    let loss = exposure * dt * DISRUPTION_ORGANIZATION_RATE;
+    for row in 0..field.height {
+        if row >= covered_rows.start && row < covered_rows.end {
+            continue;
+        }
+        let index = field.index(front_column, row);
+        field.organization[index] =
+            (field.organization[index] - loss).max(super::field::MIN_SLOT_ORGANIZATION);
     }
 }
 
@@ -321,6 +420,59 @@ mod tests {
         assert!((contact.compression - 0.25).abs() < f32::EPSILON);
         assert!((contact.normal_pressure - 3.0).abs() < f32::EPSILON);
         assert_eq!(contact.disruption, 0.0);
+    }
+
+    #[test]
+    fn disruption_reduces_front_organization() {
+        let boundary = ContactBoundary {
+            samples: vec![ContactSample {
+                column: 0,
+                row: 2,
+                normal_pressure: 4.0,
+                compression: 0.8,
+                disruption: 0.5,
+            }],
+        };
+        let mut field = FormationField::new(3, 5);
+
+        boundary.apply_to_field(&mut field, 0.5);
+
+        assert!(field.organization[field.index(0, 2)] < 1.0);
+        assert_eq!(field.organization[field.index(0, 1)], 1.0);
+    }
+
+    #[test]
+    fn exposed_front_rows_lose_organization_on_partial_overlap() {
+        let mut field = FormationField::new(3, 5);
+        apply_exposed_front_disruption(
+            &mut field,
+            0,
+            ContactRowRange { start: 2, end: 5 },
+            0.6,
+            0.8,
+            0.5,
+        );
+
+        assert!(field.organization[field.index(0, 0)] < 1.0);
+        assert!(field.organization[field.index(0, 2)] >= 1.0);
+    }
+
+    #[test]
+    fn gic_impulse_merges_into_existing_boundary() {
+        let mut boundary = request(PressureProfile::Line).resolve();
+        let before = boundary.samples[2].normal_pressure;
+        let gic = crate::lab::gic::GicImpulse {
+            target_side: FormationSide::Blue,
+            front_column: 0,
+            rows: 5,
+            row_range: ContactRowRange { start: 2, end: 3 },
+            pressure_boost: 4.0,
+            compression: 0.5,
+            disruption: 0.0,
+            from_shapecast: false,
+        };
+        gic.merge_into_boundary(&mut boundary);
+        assert!(boundary.samples[2].normal_pressure > before);
     }
 
     #[test]

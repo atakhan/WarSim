@@ -4,6 +4,83 @@
 
 ---
 
+## 2026-05-16 — GIC thrust через Avian shapecast
+
+Status: accepted  
+Context: GIC v0 использовал геометрический луч по позициям слотов; канон FMP §4 — shapecast.  
+Decision: Runtime: `SpatialQuery::shape_hits` с swept cuboid от героя, фильтр `BLUE_CONTACT_LAYER`, маппинг `Entity` → `SoldierSlot` + `ContactZoneCollider`. Импульс из `hit.distance` и `normal1`. Геометрический путь остаётся в `#[cfg(test)]` для harness.  
+Rationale: Colliders переднего ряда уже в Avian; единый физический стек для contact probe и GIC.  
+Consequences: UI показывает `avian shapecast` vs `geometry`; thrust при промахе shapecast не даёт fallback в runtime.  
+Links: `src/lab/gic.rs`, `src/lab/simulation.rs`
+
+---
+
+## 2026-05-16 — GIC v0: thrust героя через ContactBoundary
+
+Status: accepted  
+Context: Первый Layer 3 в lab по [`GIC_READINESS_CHECKLIST.md`](GIC_READINESS_CHECKLIST.md).  
+Decision: `GicThrustParams` + геометрический cast по переднему ряду защитника → `GicImpulse` (pressure_boost). Импульс **сливается** в `ContactBoundary` (`merge_into_boundary`), затем `apply_to_field` + `propagate_pressure_wave`. Герой — `FormationHero` на центральном слоте красного фронта; авто-thrust в Guided demo (`gic_enabled`). Контракт `ContactRequest` не менялся; в `BoundaryContactInput` добавлено `gic_impulse: Option<GicImpulse>`.  
+Rationale: G1–G4 чеклиста: не прямой урон, один архетип thrust, герой как источник запроса.  
+Consequences: Полноценный Avian shapecast — следующий шаг; regression `gic_thrust_raises_blue_center_pressure`.  
+Links: `src/lab/gic.rs`, [`GIC_READINESS_CHECKLIST.md`](GIC_READINESS_CHECKLIST.md)
+
+---
+
+## 2026-05-16 — Layer 2 gate для старта GIC (Layer 3)
+
+Status: accepted  
+Context: Нужен явный критерий «достаточно Contact Zone», чтобы не начать GIC поверх заглушки или обхода boundary.  
+Decision: Переход к первому GIC в lab разрешён, когда выполнены пункты L2-1…L2-6 в [`GIC_READINESS_CHECKLIST.md`](GIC_READINESS_CHECKLIST.md): контракт в production, Avian даёт row_range + penetration-based compression + impact_scale, harness стабилен, Guided demo читаем. GIC v0 — один импульс через границу, без прямой записи в поле в обход `ContactBoundary`; герой не доминирует над армией.  
+Rationale: Конституция §4.6 и §12; FMP §3.2–3.3.  
+Consequences: Новый код Layer 3 проверяется по чеклисту; расширение `ContactRequest` только через DECISIONS.  
+Links: [`GIC_READINESS_CHECKLIST.md`](GIC_READINESS_CHECKLIST.md), [`REFLECTION_2026-05-16.md`](REFLECTION_2026-05-16.md)
+
+---
+
+## 2026-05-16 — Avian v2: penetration + impact_scale
+
+Status: accepted  
+Context: v1 брал `compression` только из gap; Avian почти не отличался от synthetic по силе удара.  
+Decision: `collect_avian_contacts` использует `Collisions` (deepest `penetration`, `normal_speed`, impulse/dt) и геометрический fallback; `compression = max(gap, penetration)`; `normal_pressure` × `impact_scale` от скорости сближения. UI показывает gap/pen/compression и impact scale.  
+Rationale: Шаг к FMP §3.2 без смены `ContactRequest`.  
+Consequences: Synthetic probe по-прежнему gap-only; сравнение synthetic vs avian осмысленно по силе и penetration.  
+Links: `src/lab/avian.rs`, [`modules/avian_contact.md`](modules/avian_contact.md)
+
+---
+
+## 2026-05-16 — Guided demo без слайдеров
+
+Status: accepted  
+Context: Аксиома 16: читаемость для проверки MVP без перегруза подстройкой.  
+Decision: `LabScenario::GuidedDemo` (Offset + approach + Avian preset), `LabSettings::lock_tuning`, чеклист «Смотри на сцене» в UI.  
+Rationale: Отделить демонстрацию поведения от калибровки разработчика.  
+Consequences: Смена сценария с Guided снимает lock; калибровка — через остальные сценарии.  
+Links: `src/lab/scenario.rs`, `src/lab/settings.rs`, `src/lab/ui.rs`
+
+---
+
+## 2026-05-16 — Avian для row_range, geometry для compression (v1)
+
+Status: accepted  
+Context: Нужен реальный Layer 2 probe на colliders без переписывания `ContactBoundary` и без rigid body на всех слотах.  
+Decision: `avian3d` 0.5: kinematic cuboid на каждом слоте переднего ряда; `collect_avian_contacts` пишет `AvianContactCache` → `detect_with_probe(Avian)`; `row_range` и `disruption` из пересечений collider, `compression` пока из `front_gap` как у synthetic. Пустой кэш — fallback в Synthetic.  
+Rationale: Минимальная интеграция проверяет offset/partial overlap через физику перекрытия, контракт `ContactRequest` не меняется.  
+Consequences: Synthetic и Avian могут расходиться на compression до manifolds; тесты harness остаются на Synthetic.  
+Links: `src/lab/avian.rs`, [`modules/avian_contact.md`](modules/avian_contact.md)
+
+---
+
+## 2026-05-16 — Formation approach без Avian
+
+Status: accepted  
+Context: Compression в Contact Zone должен расти от реального зазора между фронтами, а не только от слайдера `contact_distance`.  
+Decision: Добавлен lab-режим `FormationMotion::Approach`: обе формации сближаются с `approach_speed`, остановка когда `front_gap <= speed * dt`. UI показывает live `front gap` и `compression`; regression test сравнивает peak pressure со static.  
+Rationale: Движение строя — минимальный шаг к динамическому контакту до Avian; detection уже использует `ContactFront.front_position` из geometry.  
+Consequences: Approach в harness и runtime; Avian позже может заменить источник позиций, но не должен обходить `detect_contact_request`.  
+Links: [`modules/fmp.md`](modules/fmp.md), `src/lab/motion.rs`
+
+---
+
 ## 2026-05-16 — Layer 2 начинается с чистого contact contract
 
 Status: accepted  

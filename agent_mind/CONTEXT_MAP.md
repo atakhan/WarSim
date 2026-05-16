@@ -21,6 +21,8 @@
 | [`OPEN_QUESTIONS.md`](OPEN_QUESTIONS.md) | Открытые вопросы |
 | [`GLOSSARY.md`](GLOSSARY.md) | Термины |
 | [`LESSONS_LEARNED.md`](LESSONS_LEARNED.md) | Уроки |
+| [`GIC_READINESS_CHECKLIST.md`](GIC_READINESS_CHECKLIST.md) | Gate перед Layer 3 / GIC |
+| [`REFLECTION_2026-05-16.md`](REFLECTION_2026-05-16.md) | Сверка с конституцией и аксиомами (2026-05-16) |
 | [`modules/fmp.md`](modules/fmp.md) | FMP — рабочие заметки агента |
 | [`modules/bevy_architecture.md`](modules/bevy_architecture.md) | Bevy / ECS — рабочие заметки |
 | [`modules/combat_simulation.md`](modules/combat_simulation.md) | Бой и лаборатория |

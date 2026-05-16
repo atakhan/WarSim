@@ -1,6 +1,6 @@
 use bevy::prelude::Component;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PressureProfile {
     Line,
     Wedge,
@@ -32,6 +32,9 @@ impl FieldMaterial {
     }
 }
 
+/// Минимальная организованность слота (1 = полная связность строя).
+pub const MIN_SLOT_ORGANIZATION: f32 = 0.22;
+
 #[derive(Component)]
 pub struct FormationField {
     pub width: usize,
@@ -39,6 +42,8 @@ pub struct FormationField {
     pub pressure: Vec<f32>,
     pub velocity: Vec<f32>,
     pub fractured: Vec<bool>,
+    /// Организованность по слотам; падает от contact disruption, снижает local yield.
+    pub organization: Vec<f32>,
 }
 
 impl FormationField {
@@ -50,6 +55,7 @@ impl FormationField {
             pressure: vec![0.0; len],
             velocity: vec![0.0; len],
             fractured: vec![false; len],
+            organization: vec![1.0; len],
         }
     }
 
@@ -61,6 +67,7 @@ impl FormationField {
         self.pressure.fill(0.0);
         self.velocity.fill(0.0);
         self.fractured.fill(false);
+        self.organization.fill(1.0);
     }
 
     pub fn metrics(&self) -> FieldMetrics {
@@ -89,11 +96,11 @@ impl FormationField {
         }
     }
 
-    pub fn snapshot(&self) -> FieldSnapshot {
+    pub fn snapshot(&self, front_column: usize) -> FieldSnapshot {
         let center_row = self.height / 2;
         let center = self.row_metrics(center_row);
-        let front = self.column_metrics(0);
-        let rear = self.column_metrics(self.width - 1);
+        let front = self.column_metrics(front_column);
+        let rear = self.column_metrics(self.width - 1 - front_column);
         let lower_flank = self.row_metrics(0);
         let upper_flank = self.row_metrics(self.height - 1);
         let edge = average_region_metrics(lower_flank, upper_flank);
@@ -109,7 +116,14 @@ impl FormationField {
             rear_fracture_ratio: rear.fracture_ratio,
             upper_flank_fracture_ratio: upper_flank.fracture_ratio,
             lower_flank_fracture_ratio: lower_flank.fracture_ratio,
+            front_organization_min: self.column_organization_min(front_column),
         }
+    }
+
+    pub fn column_organization_min(&self, column: usize) -> f32 {
+        (0..self.height)
+            .map(|row| self.organization[self.index(column, row)])
+            .fold(1.0, f32::min)
     }
 
     fn row_metrics(&self, row: usize) -> RegionMetrics {
@@ -158,6 +172,7 @@ pub struct FieldSnapshot {
     pub rear_fracture_ratio: f32,
     pub upper_flank_fracture_ratio: f32,
     pub lower_flank_fracture_ratio: f32,
+    pub front_organization_min: f32,
 }
 
 impl FieldSnapshot {
@@ -266,7 +281,8 @@ pub fn propagate_pressure_wave(
             let mut pressure = (previous_pressure[index] + velocity * dt)
                 * (1.0 - field_leak * dt).clamp(0.0, 1.0);
 
-            let yield_limit = material.effective_yield();
+            let organization = field.organization[index];
+            let yield_limit = material.effective_yield() * organization;
             let contagion_limit =
                 yield_limit * (0.92_f32 - fractured_neighbours * 0.12).clamp(0.48, 0.92);
 
